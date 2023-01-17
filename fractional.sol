@@ -12,12 +12,14 @@ contract RealEstateToken is ERC20, Ownable {
     address[] public stakeholders;
 
     mapping(address => uint256) public revenues;
-
+    uint256 public tokenPrice;
     uint256 public accumulated;
 
-    constructor(address _owner, uint256 _supply, string memory name_, string memory symbol_ ) ERC20(name_, symbol_)
+    constructor(address _owner, uint256 _supply, string memory name_, string memory symbol_, uint256 _tokenPrice ) ERC20(name_, symbol_)
         public
-    {
+    {   
+        tokenPrice = _tokenPrice;
+        stakeholders.push(_owner);
         _mint(_owner, _supply);
     }
 
@@ -33,16 +35,34 @@ contract RealEstateToken is ERC20, Ownable {
 
 // fractionalized token
 
-    //  Transfers are only allowed to registered stakeholders.
-    function transfer(address _recipient, uint256 _amount)
-        public override
-        returns (bool)
+    function buy()
+        public
+        payable
+        returns(bool)
     {
-        (bool isStakeholder, ) = isStakeholder(_recipient);
+        uint256 money = msg.value;
+
+        (bool isStakeholder, ) = isStakeholder(msg.sender);
         require(isStakeholder);
-        _transfer(msg.sender, _recipient, _amount);
+        // stakeholders[0] is owner
+        (bool sent, ) = stakeholders[0].call{value: msg.value}("");
+        require(sent, "Failed to send Ether");
+
+        _transfer(stakeholders[0],msg.sender, money/(tokenPrice*10**18));
         return true;
+        // payable(owner).transfer(purchasePrice);
     }
+
+    // //  Transfers are only allowed to registered stakeholders.
+    // function transfer(address _recipient, uint256 _amount)
+    //     public override
+    //     returns (bool)
+    // {
+    //     (bool isStakeholder, ) = isStakeholder(_recipient);
+    //     require(isStakeholder);
+    //     _transfer(msg.sender, _recipient, _amount);
+    //     return true;
+    // }
 
     // ---------- STAKEHOLDERS ----------
 
