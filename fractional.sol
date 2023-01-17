@@ -30,10 +30,6 @@ contract RealEstateToken is ERC20, Ownable {
     {
         accumulated += msg.value;
     }
-// owner gets paid
-// buy functionality 
-
-// fractionalized token
 
     function buy()
         public
@@ -47,7 +43,7 @@ contract RealEstateToken is ERC20, Ownable {
         // stakeholders[0] is owner
         (bool sent, ) = stakeholders[0].call{value: msg.value}("");
         require(sent, "Failed to send Ether");
-
+        // owner transfers tokens
         _transfer(stakeholders[0],msg.sender, money/(tokenPrice*10**18));
         return true;
         // payable(owner).transfer(purchasePrice);
