@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 //0x5B38Da6a701c568545dCfcB03FcB875f56beddC4
 //0xAb8483F64d9C6d1EcF9b849Ae677dD3315835cb2
+//0x4B20993Bc481177ec7E8f571ceCaE8A9e22C02db
 
 contract RealEstateToken is ERC20, Ownable {
     using SafeMath for uint256;
@@ -14,11 +15,14 @@ contract RealEstateToken is ERC20, Ownable {
     mapping(address => uint256) public revenues;
     uint256 public tokenPrice;
     uint256 public accumulated;
+    uint256 public rent;
+    address public tenantAddress;
 
-    constructor(address _owner, uint256 _supply, string memory name_, string memory symbol_, uint256 _tokenPrice ) ERC20(name_, symbol_)
+    constructor(address _owner, uint256 _supply, string memory name_, string memory symbol_, uint256 _tokenPrice, uint256 _rent ) ERC20(name_, symbol_)
         public
     {   
         tokenPrice = _tokenPrice;
+        rent = _rent*10**18;
         stakeholders.push(_owner);
         _mint(_owner, _supply);
     }
@@ -49,20 +53,28 @@ contract RealEstateToken is ERC20, Ownable {
         // payable(owner).transfer(purchasePrice);
     }
 
-    // //  Transfers are only allowed to registered stakeholders.
-    // function transfer(address _recipient, uint256 _amount)
-    //     public override
-    //     returns (bool)
-    // {
-    //     (bool isStakeholder, ) = isStakeholder(_recipient);
-    //     require(isStakeholder);
-    //     _transfer(msg.sender, _recipient, _amount);
-    //     return true;
-    // }
+    // only owner can rent out the estate
+    function rentToTenant(address _tenantAddress) 
+        public 
+        onlyOwner
+        returns(bool)
+    {
+        tenantAddress = _tenantAddress;
 
-    // ---------- STAKEHOLDERS ----------
+        return true;
+    }
 
-    
+    // only tenant can pay the rent
+    function rentPayment()
+        public payable
+        returns(bool)
+    {
+        uint256 money = msg.value;
+        require(money==rent, "Send Exact Rent");
+        require(msg.sender==tenantAddress, "Only Tenant can pay rent");
+        accumulated+=money;        
+    }
+
     function isStakeholder(address _address)
         public
         view
@@ -109,18 +121,29 @@ contract RealEstateToken is ERC20, Ownable {
     {
         for (uint256 s = 0; s < stakeholders.length; s += 1){
             address stakeholder = stakeholders[s];
-            uint256 revenue = address(this).balance * balanceOf(stakeholder) / totalSupply();
-
+            uint256 revenue = address(this).balance * balanceOf(stakeholder) / totalSupply(); 
             accumulated = accumulated.sub(revenue);
             revenues[stakeholder] = revenues[stakeholder].add(revenue);
         }
+        for (uint256 s = 0; s < stakeholders.length; s += 1){
+            address stakeholder = stakeholders[s];
+            uint256 revenue = revenues[stakeholder];
+            revenues[stakeholder] = 0;
+            payable(stakeholder).transfer(revenue);
+        }
     }
 
-    function withdraw()
+    function withdrawStake()
         public
     {
-        uint256 revenue = revenues[msg.sender];
-        revenues[msg.sender] = 0;
-        payable(msg.sender).transfer(revenue);
+        uint256 addr;
+        for (uint256 s = 0; s < stakeholders.length; s += 1){
+            if(stakeholders[s]==msg.sender){
+                addr = s;
+            }
+        }
+        _transfer(msg.sender, stakeholders[0], balanceOf(stakeholders[addr]));
     }
+
+    // 
 }
