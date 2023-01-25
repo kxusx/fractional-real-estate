@@ -12,12 +12,19 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 //0xAb8483F64d9C6d1EcF9b849Ae677dD3315835cb2
 //0x4B20993Bc481177ec7E8f571ceCaE8A9e22C02db
 
+// add status of property - not rented, rented
+// allow for shared property, multiple tenants, remove selected tenant based on index
+// 3. put for sale
+// 4. buy nft
+// 5. burn the token at end of sale
+
 contract RealEstateToken is ERC20, Ownable, ERC721Holder {
     using SafeMath for uint256;
 
     address[] public stakeholders;
 
     mapping(address => uint256) public revenues;
+    string public status;
     uint256 public tokenPrice;
     uint256 public accumulated;
     uint256 public rent;
@@ -27,30 +34,26 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
     uint256 public tokenId;
     bool public initialized = false;
 
-    constructor(address _owner, string memory name_, string memory symbol_, uint256 _tokenPrice, uint256 _rent ) ERC20(name_, symbol_)
+    constructor(address _owner, string memory name_, string memory symbol_) ERC20(name_, symbol_)
         public
     {   
-        tokenPrice = _tokenPrice;
-        rent = _rent*10**18;
         stakeholders.push(_owner);
         // _mint(_owner, _supply);
     }
 
-    function initialize(address _collection, uint256 _tokenId, uint256 _amount) external onlyOwner {
+    function initialize(address _collection, uint256 _tokenId, uint256 _amount, uint256 _tokenPrice, uint256 _rent ) external onlyOwner {
         require(!initialized, "Already initialized");
         require(_amount > 0, "Amount needs to be more than 0");
         collection = IERC721(_collection);
         collection.safeTransferFrom(msg.sender, address(this), _tokenId);
         tokenId = _tokenId;
         initialized = true;
+        tokenPrice = _tokenPrice;
+        rent = _rent*10**18;
+        status = "notRented";
         _mint(msg.sender, _amount);
     }
 
-// 1. bring in nft
-// 2. add removeTenant
-// 
-
- 
     function deposit()
         external
         payable
@@ -136,13 +139,6 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
         }
     }
 
-    // function payout()
-    //     onlyOwner
-    //     public
-    // {
-
-    // }
-
     function withdrawStake()
         public
     {
@@ -176,6 +172,16 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
         require(msg.sender==tenantAddress, "Only Tenant can pay rent");
         require(money==rent, "Send Exact Rent");
         accumulated+=money;        
+    }
+
+// which tenant to be removed
+    function removeTenant()
+        public
+        onlyOwner
+    {
+        require(tenantAddress!=address(0));
+        tenantAddress=address(0);
+        // sets it as 0x0000000000000000000000000000000000000000
     }
 
 
