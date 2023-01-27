@@ -54,13 +54,6 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
         _mint(msg.sender, _amount);
     }
 
-    function deposit()
-        external
-        payable
-    {
-        accumulated += msg.value;
-    }
-
     function buy()
         public
         payable
@@ -71,8 +64,9 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
         // stakeholders[0] is owner
         (bool sent, ) = stakeholders[0].call{value: msg.value}("");
         require(sent, "Failed to send Ether");
+        
         // owner transfers tokens
-        _transfer(stakeholders[0],msg.sender, money/(tokenPrice*10**18));
+        _transfer(stakeholders[0], msg.sender, money/(tokenPrice*10**18));
         
         // if sender is not a stakeholder, add him
         (bool _isStakeholder, ) = isStakeholder(msg.sender);
@@ -80,7 +74,6 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
         return true;
     }
 
-    
     function isStakeholder(address _address)
         public
         view
@@ -111,16 +104,6 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
         }
     }
 
-    
-    function getShare(address _stakeholder)
-        public
-        view
-        returns(uint256)
-    {
-        return balanceOf(_stakeholder) / totalSupply();
-    }
-
-
     function distribute()
         public
         onlyOwner
@@ -138,20 +121,6 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
             payable(stakeholder).transfer(revenue);
         }
     }
-
-    function withdrawStake()
-        public
-    {
-        uint256 index;
-        for (uint256 s = 0; s < stakeholders.length; s += 1){
-            if(stakeholders[s]==msg.sender){
-                index = s;
-            }
-        }
-        // payout(stakeholders[index])
-        _transfer(msg.sender, stakeholders[0], balanceOf(stakeholders[index]));
-    }
-
 
     // only owner can rent out the estate
     function rentToTenant(address _tenantAddress) 
@@ -174,16 +143,41 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
         accumulated+=money;        
     }
 
-// which tenant to be removed
+    // which tenant to be removed
     function removeTenant()
         public
         onlyOwner
     {
         require(tenantAddress!=address(0));
         tenantAddress=address(0);
-        // sets it as 0x0000000000000000000000000000000000000000
     }
 
+    // function deposit()
+    //     external
+    //     payable
+    // {
+    //     accumulated += msg.value;
+    // }
 
-    // 
+    // function withdrawStake()
+    //     public
+    // {
+    //     uint256 index;
+    //     for (uint256 s = 0; s < stakeholders.length; s += 1){
+    //         if(stakeholders[s]==msg.sender){
+    //             index = s;
+    //         }
+    //     }
+    //     // payout(stakeholders[index])
+    //     _transfer(msg.sender, stakeholders[0], balanceOf(stakeholders[index]));
+    // }
+
+    // function getShare(address _stakeholder)
+    //     public
+    //     view
+    //     returns(uint256)
+    // {
+    //     return balanceOf(_stakeholder) / totalSupply();
+    // }
+
 }
