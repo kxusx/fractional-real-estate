@@ -59,6 +59,8 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
     }
 
     
+// allow anyone to buy from anyone
+// sell accordingly
 
     function buy()
         public
@@ -209,6 +211,7 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
         canRedeem = true;
     }
 
+// change owner of contract
     function purchase() external payable {
         require(forSale, "Not for sale");
         require(msg.value >= salePrice, "Not enough ether sent");
