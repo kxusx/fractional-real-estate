@@ -38,7 +38,14 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
     mapping(address => uint) rent;
     address[] public tenantAddresses;
 
+    struct stakeSale{
+        address stakeholder;
+        uint256 noOfTokens;
+        uint256 priceOfToken;
+    }
+    stakeSale[] public stakeSales;
 
+    // ---------------------------------------------------------------
 
     constructor(address _owner, string memory name_, string memory symbol_) ERC20(name_, symbol_)
         public
@@ -58,11 +65,10 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
         _mint(msg.sender, _noOfTokens);
     }
 
-    
-// allow anyone to buy from anyone
-// sell accordingly
+    // ---------------------------------------------------------------
+    // STAKE MARKET FUNCTIONALITY
 
-    function buy()
+    function buyFromOwner()
         public
         payable
         returns(bool)
@@ -81,6 +87,32 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
         return true;
     }
 
+    function sellStake(uint256 _noOfTokens, uint256 _priceOfToken) external returns(bool){
+        require(_noOfTokens > 0, "Amount needs to be more than 0");
+        require(_priceOfToken > 0, "Price needs to be more than 0");
+        require(balanceOf(msg.sender) >= _noOfTokens, "Not enough tokens to sell");
+        stakeSales.push(stakeSale(msg.sender, _noOfTokens, _priceOfToken));
+        return true;
+    }
+
+    function buyStakeFromStakeholder(uint256 _index) external payable returns(bool){
+        require(_index < stakeSales.length, "Index out of bounds");
+        require(msg.value >= stakeSales[_index].priceOfToken*stakeSales[_index].noOfTokens, "Not enough money");
+        require(balanceOf(stakeSales[_index].stakeholder) >= stakeSales[_index].noOfTokens, "Not enough tokens to sell");
+        _transfer(stakeSales[_index].stakeholder, msg.sender, stakeSales[_index].noOfTokens);
+        address payable _stakeholder = payable(stakeSales[_index].stakeholder);
+        (bool sent, ) = _stakeholder.call{value: msg.value}("");
+        require(sent, "Failed to send Ether");
+        stakeSales.pop();
+
+        // if buyer is not a stakeholder, add him
+        (bool _isStakeholder, ) = isStakeholder(msg.sender);
+        if (!_isStakeholder) stakeholders.push(msg.sender);
+        return true;
+    }
+
+    // ---------------------------------------------------------------
+    // HELPER FUNCTIONS
     
     function isStakeholder(address _address)
         public
@@ -112,15 +144,8 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
         }
     }
 
-    
-    function getShare(address _stakeholder)
-        public
-        view
-        returns(uint256)
-    {
-        return balanceOf(_stakeholder) / totalSupply();
-    }
-
+    // ---------------------------------------------------------------
+    // DISTRIBUTE 
 
     function distribute()
         public
@@ -141,7 +166,7 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
 
     // ---------------------------------------------------------------
     // RENT STUFF
-// only owner can rent out the estate
+
     function rentToTenant(address _tenantAddress, uint _rent) 
         public 
         onlyOwner
@@ -190,13 +215,12 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
     // 1. Owner calls putForSale()
     // 2. Interested buyers can call submitProposalToBuy to submit their offers
     // 3. Stakeholders vote on each proposal by calling confirmProposal()
-    // 4. Owner approves on of the eligibile proposals 
-    // 5. Buyer completes the sale process by paying to the contract and receiving the nft
-    // 6. Stakeholders can redeem their payouts
 
-    uint proposedPrice=0;
-    bool proposalRecieved = false;
-    uint noOfConfirmations;
+    // Remove 4. Owner approves one of the eligibile proposals(which has recieved confirmations from all stakeholders) by calling approveProposal()
+    
+    // 5. Buyer completes the sale process by paying to the contract and receiving the nft
+
+    
     address finalBuyer;
     uint finalSalePrice;
     bool sold = false;
@@ -216,9 +240,9 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
         public 
     {
         require(forSale, "Not for sale");
-        proposedPrice = _value*10**18;
-        if(forSale==true && proposedPrice>salePrice){
-            proposalRecieved = true;
+        uint proposedPrice = _value*10**18;
+        require(proposedPrice>=salePrice,"Proposed price less that sale price");
+        if(forSale==true && proposedPrice>=salePrice){
             proposals.push(Proposal(msg.sender, proposedPrice, 0));
         }
         // emit SubmitTransaction(msg.sender, txIndex, _to, _value, _data);
@@ -238,8 +262,9 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
         proposal.noOfConfirmations++;
     }
 
-    function executeTransaction(uint _txIndex)
+    function approveProposal(uint _txIndex)
         public
+        onlyOwner
     {
         require(forSale,"Not for Sale");
         require(_txIndex<proposals.length, "Invalid Transaction Index");
@@ -258,14 +283,19 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
         require(msg.sender==finalBuyer, "Not the final buyer");
         require(msg.value >= finalSalePrice, "Not enough ether sent");
 
-        // collection.transferFrom(address(this), msg.sender, tokenId);
+        collection.transferFrom(address(this), msg.sender, tokenId);
 
         for (uint256 s = 0; s < stakeholders.length; s += 1){
             address stakeholder = stakeholders[s];
             uint256 revenue = address(this).balance * balanceOf(stakeholder) / totalSupply(); 
-            revenues[stakeholder] = revenues[stakeholder].add(revenue);
-            payable(stakeholder).transfer(revenue);
+            revenues[stakeholder] = revenues[stakeholder].add(revenue);    
+        }
+
+        for (uint256 s = 0; s < stakeholders.length; s += 1){
+            address stakeholder = stakeholders[s];
+            uint256 revenue = revenues[stakeholder];
             revenues[stakeholder] = 0;
+            payable(stakeholder).transfer(revenue);
         }
 
         forSale = false;
@@ -325,3 +355,7 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
          _transfer(msg.sender,stakeholders[0], balanceOf(stakeholder));
     }
 }
+
+// add modifiers
+// convert arrays to map to reduce computation
+// add more conditions
