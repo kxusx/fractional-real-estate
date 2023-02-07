@@ -12,23 +12,20 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 //0xAb8483F64d9C6d1EcF9b849Ae677dD3315835cb2
 //0x4B20993Bc481177ec7E8f571ceCaE8A9e22C02db
 
-// add status of property - not rented, rented
-// allow for shared property, multiple tenants, remove selected tenant based on index
-// 3. put for sale
-// 4. buy nft
-// 5. burn the token at end of sale
-
 contract RealEstateToken is ERC20, Ownable, ERC721Holder {
     using SafeMath for uint256;
 
     address[] public stakeholders;
 
+    // status, can change to enum
+    uint public status;
+    // 0-> unrented
+    // 1-> rented
+    // 2 -> for sale
+
     mapping(address => uint256) public revenues;
-    string public status;
     uint256 public tokenPrice;
     uint256 public accumulated;
-    uint256 public rent;
-    address public tenantAddress;
 
     IERC721 public collection;
     uint256 public tokenId;
@@ -38,24 +35,27 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
     uint256 public salePrice;
     bool public canRedeem = false;
 
+    mapping(address => uint) rent;
+    address[] public tenantAddresses;
+
+
+
     constructor(address _owner, string memory name_, string memory symbol_) ERC20(name_, symbol_)
         public
     {   
         stakeholders.push(_owner);
-        // _mint(_owner, _supply);
     }
 
-    function initialize(address _collection, uint256 _tokenId, uint256 _amount, uint256 _tokenPrice, uint256 _rent ) external onlyOwner {
+    function initialize(address _collection, uint256 _tokenId, uint256 _noOfTokens, uint256 _tokenPrice) external onlyOwner {
         require(!initialized, "Already initialized");
-        require(_amount > 0, "Amount needs to be more than 0");
+        require(_noOfTokens > 0, "Amount needs to be more than 0");
         collection = IERC721(_collection);
         collection.safeTransferFrom(msg.sender, address(this), _tokenId);
         tokenId = _tokenId;
         initialized = true;
         tokenPrice = _tokenPrice;
-        rent = _rent*10**18;
-        status = "notRented";
-        _mint(msg.sender, _amount);
+        status = 0; // unrented
+        _mint(msg.sender, _noOfTokens);
     }
 
     
@@ -139,63 +139,145 @@ contract RealEstateToken is ERC20, Ownable, ERC721Holder {
         }
     }
 
-    function withdrawStake()
-        public
-    {
-        uint256 index;
-        for (uint256 s = 0; s < stakeholders.length; s += 1){
-            if(stakeholders[s]==msg.sender){
-                index = s;
-            }
-        }
-        // payout(stakeholders[index])
-        _transfer(msg.sender, stakeholders[0], balanceOf(stakeholders[index]));
-    }
-
-
-    // only owner can rent out the estate
-    function rentToTenant(address _tenantAddress) 
+    // ---------------------------------------------------------------
+    // RENT STUFF
+// only owner can rent out the estate
+    function rentToTenant(address _tenantAddress, uint _rent) 
         public 
         onlyOwner
         returns(bool)
     {
-        tenantAddress = _tenantAddress;
+        tenantAddresses.push(_tenantAddress);
+        rent[_tenantAddress] = _rent*10**18; // rent in ether
+
+        // change status to rented
+        status = 1;
         return true;
     }
 
     // only tenant can pay the rent
     function rentPayment()
         public payable
-        returns(bool)
     {
         uint256 money = msg.value;
-        require(msg.sender==tenantAddress, "Only Tenant can pay rent");
-        require(money==rent, "Send Exact Rent");
-        accumulated+=money;        
-        return true;
+        
+        // check for isTenant
+        bool isTenant = false;
+        for(uint i = 0; i< tenantAddresses.length; i++){
+            if(msg.sender == tenantAddresses[i]){
+                isTenant = true;
+            }
+        }
+        require(isTenant==true, "Only Tenant can pay rent");
+
+        // check for exact rent
+        // require(money==rent/tenantAddresses.length, "Send Exact Rent");
+        require(money == rent[msg.sender], "Send Exact Rent");
+
+        accumulated+=money;
     }
+    // ---------------------------------------------------------------
 
-// which tenant to be removed
-    function removeTenant()
-        public
-        onlyOwner
-    {
-        require(tenantAddress!=address(0));
-        tenantAddress=address(0);
-        // sets it as 0x0000000000000000000000000000000000000000
-    }
-
-
-    // 1. Owner calls putForSale
-    // 2. Owner deposits salePrice funds into contract
-    // 3. Stakeholder redeem their stake, and transfer their tokens to owner
-    // 4. Now buyer can purchase only if owner has all the tokens
-
+    // PUT FOR SALE
     function putForSale(uint256 price) external onlyOwner {
         salePrice = price*10**18;
         forSale = true;
     }
 
+    // ---------------------------------------------------------------
+    // Multi Sig Process
+
+    // 1. Owner calls putForSale()
+    // 2. Interested buyers can call submitProposalToBuy to submit their offers
+    // 3. Stakeholders vote on each proposal by calling confirmProposal()
+    // 4. Owner approves on of the eligibile proposals 
+    // 5. Buyer completes the sale process by paying to the contract and receiving the nft
+    // 6. Stakeholders can redeem their payouts
+
+    uint proposedPrice=0;
+    bool proposalRecieved = false;
+    uint noOfConfirmations;
+    address finalBuyer;
+    uint finalSalePrice;
+    bool sold = false;
+
+    struct Proposal{
+        address buyer;
+        uint proposedPrice;
+        uint noOfConfirmations;
+    }
+
+    Proposal[] public proposals;
+    
+    // create a mapping to store the confirmations of each transaction by each stakeholder
+    mapping(uint => mapping(address => bool)) public isConfirmed;
+
+    function submitProposalToBuy(uint _value) 
+        public 
+    {
+        require(forSale, "Not for sale");
+        proposedPrice = _value*10**18;
+        if(forSale==true && proposedPrice>salePrice){
+            proposalRecieved = true;
+            proposals.push(Proposal(msg.sender, proposedPrice, 0));
+        }
+        // emit SubmitTransaction(msg.sender, txIndex, _to, _value, _data);
+    }
+
+     function confirmProposal(uint _txIndex)
+        public
+    {
+        require(forSale,"Not for Sale");
+        require(_txIndex<proposals.length, "Invalid Transaction Index");
+        (bool _isStakeholder, uint256 s) = isStakeholder(msg.sender);
+        require(_isStakeholder, "Not a stakeholder");
+        require(isConfirmed[_txIndex][msg.sender]==false, "Already Confirmed");
+
+        Proposal storage proposal = proposals[_txIndex];
+        isConfirmed[_txIndex][msg.sender] = true;
+        proposal.noOfConfirmations++;
+    }
+
+    function executeTransaction(uint _txIndex)
+        public
+    {
+        require(forSale,"Not for Sale");
+        require(_txIndex<proposals.length, "Invalid Transaction Index");
+
+        Proposal storage proposal = proposals[_txIndex];
+        require(proposal.noOfConfirmations>=stakeholders.length, "Not enough confirmations");
+        sold = true;
+        
+        forSale = false;
+        finalSalePrice = proposal.proposedPrice;
+        finalBuyer = proposal.buyer;
+    }
+
+    function purchaseBuyer() external payable {
+        require(sold, "Not Sold Yet");
+        require(msg.sender==finalBuyer, "Not the final buyer");
+        require(msg.value >= finalSalePrice, "Not enough ether sent");
+
+        // collection.transferFrom(address(this), msg.sender, tokenId);
+
+        for (uint256 s = 0; s < stakeholders.length; s += 1){
+            address stakeholder = stakeholders[s];
+            uint256 revenue = address(this).balance * balanceOf(stakeholder) / totalSupply(); 
+            revenues[stakeholder] = revenues[stakeholder].add(revenue);
+            payable(stakeholder).transfer(revenue);
+            revenues[stakeholder] = 0;
+        }
+
+        forSale = false;
+        canRedeem = true;
+    }
+
+    // ---------------------------------------------------------------
+
+    // 1. Owner calls putForSale
+    // 2. Owner deposits salePrice funds into contract
+    // 3. Stakeholder redeem their stake, and transfer their tokens to owner
+    // 4. Now buyer can purchase only if owner has all the tokens
     
     function deposit()
         external
